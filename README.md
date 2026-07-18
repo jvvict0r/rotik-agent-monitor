@@ -75,4 +75,95 @@ O briefing explicita que a dor atual é do time interno, que hoje depende de pla
 
 ---
 
-*As próximas seções (modelagem de dados, execução do projeto, decisões de arquitetura e respostas de produto) serão adicionadas conforme as etapas avançam.*
+## Etapa 1: Modelagem de dados
+
+### Diagrama ER
+
+```mermaid
+erDiagram
+    plans {
+        bigint id PK
+        varchar name
+        int monthly_execution_limit
+    }
+    clients {
+        bigint id PK
+        varchar name
+        bigint plan_id FK
+    }
+    users {
+        bigint id PK
+        bigint client_id FK "null para usuarios do CS"
+        varchar name
+        varchar email UK
+        varchar password
+        varchar role "cs | client"
+    }
+    agents {
+        bigint id PK
+        bigint client_id FK
+        varchar name "unico por cliente"
+        text description "opcional"
+        varchar status "active | inactive"
+    }
+    executions {
+        bigint id PK
+        bigint agent_id FK
+        varchar status "success | failed"
+        int duration_ms "opcional"
+        text error_message "opcional"
+        timestamptz executed_at
+    }
+    client_monthly_usages {
+        bigint id PK
+        bigint client_id FK
+        varchar period "YYYY-MM"
+        int executions_count
+    }
+    agent_monthly_usages {
+        bigint id PK
+        bigint agent_id FK
+        varchar period "YYYY-MM"
+        int success_count
+        int failed_count
+    }
+    plans ||--o{ clients : "atende"
+    clients ||--o{ users : "possui"
+    clients ||--o{ agents : "possui"
+    clients ||--o{ client_monthly_usages : "acumula"
+    agents ||--o{ agent_monthly_usages : "acumula"
+    agents ||--o{ executions : "registra"
+```
+
+### Decisões de modelagem
+
+**O limite mora no plano, o consumo mora no cliente.** O modelo segue a terceira forma normal: o limite mensal é atributo do plano e não é duplicado em lugar nenhum. Cliente aponta para plano, agente aponta para cliente, execução aponta para agente. Com isso, a troca de plano de um cliente é um update de uma única coluna, e o limite considerado passa a ser o novo automaticamente (coerente com a suposição 8 do Discovery).
+
+**Uso mensal: contador agregado, não contagem em tempo real.** A pergunta "quantas execuções o cliente já fez este mês?" é a mais frequente do sistema, consultada a cada execução e a cada carregamento do painel. Responder com `COUNT(*)` sobre `executions` funciona no começo, mas degrada linearmente com o volume (um cliente Enterprise pode gerar milhões de linhas por mês). Por isso existe `client_monthly_usages`: uma linha por cliente por mês (`UNIQUE(client_id, period)`), com o contador incrementado de forma atômica na mesma transação que registra a execução. A leitura do consumo vira a busca de uma única linha, custo constante. É uma desnormalização deliberada e segura: `executions` continua sendo a fonte da verdade, então o contador pode ser auditado ou reconstruído a qualquer momento a partir dela.
+
+**O consumo por agente também é contador, pelo mesmo motivo.** O painel lista os agentes de um cliente com o consumo de cada um no mês, então essa leitura é tão frequente quanto a do total. `agent_monthly_usages` guarda uma linha por agente por mês, com sucessos e falhas separados. O total de falhas no mês ainda dá ao CS um sinal barato de agente problemático, sem varrer o histórico. São dois contadores atualizados na mesma transação: o do cliente responde "pode executar?" e o do agente responde "quanto cada um consumiu?".
+
+**A verificação do limite acontece dentro da transação, com lock de linha.** O cenário perigoso é o de corrida: o cliente está a uma execução do limite e duas chegam ao mesmo tempo. Se cada uma ler o contador antes da outra gravar, as duas passam. Para impedir isso, o registro roda em transação que trava a linha do contador mensal do cliente (upsert com lock), compara com o limite do plano e só então grava a execução e incrementa os contadores. Uma das duas requisições concorrentes espera a outra terminar e é recusada corretamente. Como a transação toca duas linhas de contador, a ordem de escrita é fixa (sempre cliente, depois agente), o que elimina a chance de deadlock entre execuções concorrentes. Esse comportamento é o coração do desafio e terá teste de concorrência dedicado.
+
+**Bloqueio é estado derivado, não coluna.** Um agente está bloqueado quando o consumo do mês do seu cliente atinge o limite do plano. Guardar isso numa coluna `blocked` criaria uma segunda fonte de verdade e exigiria um job para desbloquear todo mundo na virada do mês (e um bug nesse job deixaria cliente pagante bloqueado indevidamente). Derivando o estado na leitura, a virada do mês zera o consumo naturalmente, porque o período novo ainda não tem linha de contador. A coluna `status` do agente guarda apenas o que é decisão do usuário: `active` ou `inactive`.
+
+**Execuções com falha ficam no histórico, fora da cota.** O incremento do contador só acontece quando a execução tem status `success` (suposição 3 do Discovery). A tabela `executions` registra as falhas do mesmo jeito, com `error_message` e `duration_ms`, porque são exatamente o que o CS precisa enxergar para diagnosticar problema de agente.
+
+**Usuários e perfis.** `role` distingue `cs` de `client`. Usuário do CS tem `client_id` nulo e enxerga qualquer cliente; usuário de cliente tem `client_id` obrigatório e as Policies restringem tudo ao próprio cliente. Preferi uma coluna explícita a inferir o perfil pela nulidade do `client_id`, porque intenção explícita facilita leitura e evita gambiarra quando surgir um terceiro perfil.
+
+**Integridade garantida no banco, não só na aplicação.** A validação de entrada barra dado ruim na porta, mas o banco é a última linha de defesa contra bug de aplicação: `CHECK` garante a coerência entre `role` e `client_id` (CS sem cliente, usuário de cliente com cliente obrigatório) e restringe os valores de `status` nas tabelas que o usam. Nome de agente é único por cliente, porque dois agentes homônimos no mesmo cliente só geram confusão para o CS.
+
+**Índices e constraints relevantes:**
+
+| Índice / constraint | Sustenta |
+|---|---|
+| `executions(agent_id, executed_at DESC)` | Histórico paginado do agente, já na ordem exibida |
+| `client_monthly_usages UNIQUE(client_id, period)` | Leitura O(1) do consumo do cliente e alvo do upsert atômico |
+| `agent_monthly_usages UNIQUE(agent_id, period)` | Leitura O(1) do consumo por agente na listagem do painel |
+| `agents(client_id)` + `UNIQUE(client_id, name)` | Listagem por cliente e nome sem duplicata dentro do cliente |
+| `users(email) UNIQUE` | Login |
+| `CHECK role/client_id em users` | CS sem vínculo, usuário de cliente sempre vinculado |
+
+---
+
+*As próximas seções (execução do projeto, decisões de arquitetura e respostas de produto) serão adicionadas conforme as etapas avançam.*
