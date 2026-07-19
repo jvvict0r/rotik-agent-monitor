@@ -166,4 +166,74 @@ erDiagram
 
 ---
 
-*As próximas seções (execução do projeto, decisões de arquitetura e respostas de produto) serão adicionadas conforme as etapas avançam.*
+## Etapa 2: Backend
+
+### Como rodar a API localmente
+
+Pré-requisitos: PHP 8.4 com pdo_pgsql, Composer e Docker.
+
+```bash
+docker compose up -d          # Postgres 17 (cria também a base de testes)
+cd backend
+composer install
+cp .env.example .env
+php artisan key:generate
+php artisan migrate --seed
+php artisan serve             # API em http://127.0.0.1:8000/api
+```
+
+Se a porta 5432 já estiver em uso na sua máquina, crie um `.env` na raiz do repositório com `DB_PORT=5433` (o compose lê essa variável) e ajuste o mesmo valor no `backend/.env`.
+
+Usuários do seed, todos com senha `password`:
+
+| Email | Perfil |
+|---|---|
+| `cs@rotik.com` | Time interno (CS), enxerga todos os clientes |
+| `ana@acme.com` | Cliente Acme Atendimentos (Pro, consumo saudável) |
+| `bruno@betalogistica.com` | Cliente Beta Logística (Starter, 85% da cota, em alerta) |
+| `carla@gamafintech.com` | Cliente Gama Fintech (Starter, 100% da cota, bloqueada) |
+
+Testes: `php artisan test`. A suíte roda contra a base separada `rotik_monitor_test` (criada pelo init script do container), então os dados de demonstração não são afetados. O teste de concorrência exige a extensão pcntl e um Postgres real, motivo pelo qual os testes não usam sqlite.
+
+### Autenticação e perfis
+
+Sanctum com tokens de API: `POST /api/auth/login` devolve o token que vai no header `Authorization: Bearer`. Existem dois perfis, `cs` (time interno, acessa qualquer cliente) e `client` (usuário de um cliente, acessa apenas o próprio). O login tem limite de 5 tentativas por minuto por IP, e a mensagem de credencial inválida não revela se o email existe na base.
+
+Simplificações conscientes, aceitas pelo enunciado: tokens sem expiração ou refresh e sem 2FA. Já o isolamento entre clientes é tratado como requisito real: toda rota passa por Policy, e o acesso a recurso de outro cliente responde **404 em vez de 403**, para não revelar nem a existência do recurso. Os testes cobrem o isolamento nas duas direções (leitura e escrita).
+
+### Endpoints
+
+| Método e rota | Quem acessa | O que faz |
+|---|---|---|
+| `POST /api/auth/login` | Público (com throttle) | Autentica e devolve token + perfil |
+| `GET /api/auth/me` | Autenticado | Identifica o dono do token |
+| `POST /api/auth/logout` | Autenticado | Revoga o token atual |
+| `GET /api/clients` | Só CS | Lista clientes para o seletor do painel |
+| `GET /api/clients/{id}/agents` | CS ou o próprio cliente | Agentes com consumo do mês por agente + resumo do cliente (usado, limite, percentual, bloqueio) |
+| `POST /api/clients/{id}/agents` | CS ou o próprio cliente | Cadastra agente (nome único por cliente) |
+| `POST /api/agents/{id}/executions` | CS ou o próprio cliente | Registra execução aplicando a regra de bloqueio |
+| `GET /api/agents/{id}/executions` | CS ou o próprio cliente | Histórico paginado, do mais recente para o mais antigo (`page`, `per_page` de 1 a 100) |
+
+Todo endpoint que recebe dados valida a entrada via Form Request, inclusive os parâmetros de paginação.
+
+### A regra de bloqueio na prática
+
+`POST /api/agents/{id}/executions` roda dentro de uma transação que trava a linha do contador mensal do cliente antes de comparar com o limite do plano. Com isso, duas execuções simultâneas disputando a última vaga não passam juntas: uma espera o lock e é recusada. Esse cenário tem teste dedicado que dispara dois processos reais com `pcntl_fork`. A recusa responde **429**, registra log de warning com cliente, agente, período e limite, e não grava nada. Execução com falha entra no histórico com a mensagem de erro, mas não consome cota. Agente inativo responde **409**.
+
+### Formato de erros
+
+Toda resposta de erro da API é JSON com uma chave `message` em português, sem stack trace nem detalhe interno (nomes de classes, SQL). Erros de validação incluem também o objeto `errors` campo a campo.
+
+| Código | Quando |
+|---|---|
+| 401 | Sem token ou token revogado |
+| 403 | Autenticado, mas sem permissão para a ação (ex.: usuário de cliente listando todos os clientes) |
+| 404 | Recurso inexistente ou pertencente a outro cliente |
+| 409 | Execução em agente inativo |
+| 422 | Erro de validação, com detalhe por campo |
+| 429 | Limite mensal do plano atingido, ou excesso de tentativas de login |
+| 500 | Erro interno, mensagem genérica (detalhe fica só no log do servidor) |
+
+---
+
+*As próximas seções (frontend, deploy, evidências de debug e respostas de produto) serão adicionadas conforme as etapas avançam.*
