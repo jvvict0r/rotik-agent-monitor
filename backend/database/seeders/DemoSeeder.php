@@ -9,6 +9,7 @@ use App\Models\ClientMonthlyUsage;
 use App\Models\Execution;
 use App\Models\Plan;
 use App\Models\User;
+use App\Support\MonthlyPeriod;
 use Illuminate\Database\Seeder;
 
 class DemoSeeder extends Seeder
@@ -94,7 +95,7 @@ class DemoSeeder extends Seeder
 
     private function rebuildUsageCounters(Client $client): void
     {
-        $period = now()->format('Y-m');
+        $period = MonthlyPeriod::current();
 
         foreach ($client->agents as $agent) {
             $totals = $agent->executions()
