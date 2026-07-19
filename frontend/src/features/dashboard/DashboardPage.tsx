@@ -12,6 +12,8 @@ import { ClientSelector } from '@/features/clients/ClientSelector'
 import { useAgents } from '@/features/agents/useAgents'
 import { AgentGridSkeleton, AgentList } from '@/features/agents/AgentList'
 import { CreateAgentModal } from '@/features/agents/CreateAgentModal'
+import { ExecutionHistoryDrawer } from '@/features/executions/ExecutionHistoryDrawer'
+import type { Agent } from '@/types/api'
 import { ClientOverview } from './ClientOverview'
 
 function OverviewSkeleton() {
@@ -46,6 +48,7 @@ export function DashboardPage() {
   )
   const [createOpen, setCreateOpen] = useState(false)
   const [createdNotice, setCreatedNotice] = useState<string | null>(null)
+  const [historyAgent, setHistoryAgent] = useState<Agent | null>(null)
 
   useEffect(() => {
     if (isCs && selectedClientId === null && clientsQuery.data?.length) {
@@ -134,6 +137,7 @@ export function DashboardPage() {
                   agents={agentsQuery.data.data}
                   isClientBlocked={agentsQuery.data.meta.usage.is_blocked}
                   onCreateAgent={() => setCreateOpen(true)}
+                  onOpenHistory={setHistoryAgent}
                 />
               </section>
             </>
@@ -142,15 +146,24 @@ export function DashboardPage() {
       )}
 
       {selectedClientId !== null && (
-        <CreateAgentModal
-          clientId={selectedClientId}
-          open={createOpen}
-          onClose={() => setCreateOpen(false)}
-          onCreated={(name) => {
-            setCreateOpen(false)
-            setCreatedNotice(name)
-          }}
-        />
+        <>
+          <CreateAgentModal
+            clientId={selectedClientId}
+            open={createOpen}
+            onClose={() => setCreateOpen(false)}
+            onCreated={(name) => {
+              setCreateOpen(false)
+              setCreatedNotice(name)
+            }}
+          />
+          <ExecutionHistoryDrawer
+            agent={historyAgent}
+            clientId={selectedClientId}
+            isClientBlocked={agentsQuery.data?.meta.usage.is_blocked ?? false}
+            open={historyAgent !== null}
+            onClose={() => setHistoryAgent(null)}
+          />
+        </>
       )}
     </AppShell>
   )
