@@ -71,7 +71,7 @@ class AuthenticationTest extends TestCase
     {
         $this->post('/api/auth/logout')
             ->assertUnauthorized()
-            ->assertJson(['message' => 'Unauthenticated.']);
+            ->assertJson(['message' => 'Não autenticado.']);
     }
 
     public function test_me_devolve_o_usuario_do_token(): void
