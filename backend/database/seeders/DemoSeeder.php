@@ -2,6 +2,8 @@
 
 namespace Database\Seeders;
 
+use App\Enums\AgentStatus;
+use App\Enums\UserRole;
 use App\Models\Agent;
 use App\Models\AgentMonthlyUsage;
 use App\Models\Client;
@@ -20,25 +22,28 @@ class DemoSeeder extends Seeder
             return;
         }
 
-        User::factory()->create([
+        User::create([
             'name' => 'Equipe CS',
             'email' => 'cs@rotik.com',
+            'password' => 'password',
+            'role' => UserRole::Cs,
+            'client_id' => null,
         ]);
 
         $this->seedClient('Acme Atendimentos', 'Pro', 'Ana Souza', 'ana@acme.com', [
-            'Suporte N1' => 900,
-            'Qualificação de Leads' => 450,
-            'FAQ Interno' => 150,
+            ['Suporte N1', 'Atende as dúvidas de primeiro nível dos clientes no chat.', 900],
+            ['Qualificação de Leads', 'Faz as perguntas iniciais e classifica os leads recebidos.', 450],
+            ['FAQ Interno', 'Responde as perguntas frequentes da equipe sobre processos.', 150],
         ]);
 
         $this->seedClient('Beta Logística', 'Starter', 'Bruno Lima', 'bruno@betalogistica.com', [
-            'Rastreio de Pedidos' => 280,
-            'SAC WhatsApp' => 145,
+            ['Rastreio de Pedidos', 'Informa o status de entrega a partir do código do pedido.', 280],
+            ['SAC WhatsApp', 'Recebe e encaminha as solicitações de atendimento no WhatsApp.', 145],
         ]);
 
         $this->seedClient('Gama Fintech', 'Starter', 'Carla Nunes', 'carla@gamafintech.com', [
-            'Antifraude' => 320,
-            'Onboarding PJ' => 180,
+            ['Antifraude', 'Analisa transações suspeitas e sinaliza possíveis fraudes.', 320],
+            ['Onboarding PJ', 'Conduz a abertura de conta para clientes pessoa jurídica.', 180],
         ]);
     }
 
@@ -46,22 +51,27 @@ class DemoSeeder extends Seeder
      * Cria um cliente completo: usuário, agentes e execuções do mês corrente,
      * com os contadores mensais reconstruídos a partir das execuções geradas.
      */
-    private function seedClient(string $name, string $planName, string $userName, string $userEmail, array $successesPerAgent): void
+    private function seedClient(string $name, string $planName, string $userName, string $userEmail, array $agents): void
     {
-        $client = Client::factory()->create([
+        $client = Client::create([
             'name' => $name,
             'plan_id' => Plan::where('name', $planName)->firstOrFail()->id,
         ]);
 
-        User::factory()->forClient($client)->create([
+        User::create([
             'name' => $userName,
             'email' => $userEmail,
+            'password' => 'password',
+            'role' => UserRole::Client,
+            'client_id' => $client->id,
         ]);
 
-        foreach ($successesPerAgent as $agentName => $successCount) {
-            $agent = Agent::factory()->create([
+        foreach ($agents as [$agentName, $description, $successCount]) {
+            $agent = Agent::create([
                 'client_id' => $client->id,
                 'name' => $agentName,
+                'description' => $description,
+                'status' => AgentStatus::Active,
             ]);
 
             $this->seedExecutions($agent, $successCount);
