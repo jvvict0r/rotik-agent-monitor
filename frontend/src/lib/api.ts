@@ -8,8 +8,10 @@ export const tokenStore = {
   clear: () => localStorage.removeItem(TOKEN_KEY),
 }
 
+const apiRoot = import.meta.env.VITE_API_URL?.replace(/\/$/, '') ?? ''
+
 export const api = axios.create({
-  baseURL: '/api',
+  baseURL: `${apiRoot}/api`,
   headers: { Accept: 'application/json' },
   timeout: 15000,
 })

@@ -16,6 +16,10 @@ class DemoSeeder extends Seeder
 {
     public function run(): void
     {
+        if (Client::query()->exists()) {
+            return;
+        }
+
         User::factory()->create([
             'name' => 'Equipe CS',
             'email' => 'cs@rotik.com',
