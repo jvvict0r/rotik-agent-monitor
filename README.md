@@ -157,7 +157,7 @@ erDiagram
 
 | Índice / constraint | Sustenta |
 |---|---|
-| `executions(agent_id, executed_at DESC)` | Histórico paginado do agente, já na ordem exibida |
+| `executions(agent_id, executed_at)` | Histórico paginado do agente, ordenado pela data de execução |
 | `client_monthly_usages UNIQUE(client_id, period)` | Leitura O(1) do consumo do cliente e alvo do upsert atômico |
 | `agent_monthly_usages UNIQUE(agent_id, period)` | Leitura O(1) do consumo por agente na listagem do painel |
 | `agents(client_id)` + `UNIQUE(client_id, name)` | Listagem por cliente e nome sem duplicata dentro do cliente |
@@ -236,4 +236,52 @@ Toda resposta de erro da API é JSON com uma chave `message` em português, sem 
 
 ---
 
-*As próximas seções (frontend, deploy, evidências de debug e respostas de produto) serão adicionadas conforme as etapas avançam.*
+## Etapa 3: Frontend
+
+SPA em React 19 + TypeScript + Vite + Tailwind CSS v4, consumindo a API real (sem mock). Rodar localmente:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+O Vite sobe em `http://localhost:5173` e faz proxy de `/api` para `http://127.0.0.1:8000`, então basta ter o backend rodando. Use os mesmos logins do seed (senha `password`); comece por `cs@rotik.com` para ver o seletor de clientes.
+
+### Organização e escolhas
+
+- **Componentização por domínio:** `src/features/{auth,clients,agents,executions,dashboard}` para a lógica de cada área, `src/components/ui` para os primitivos reutilizáveis (Button, Card, Badge, Modal, Drawer, etc.) e `src/lib` para infraestrutura (cliente HTTP, formatação). Nada de arquivo gigante: o orquestrador da tela, `DashboardPage.tsx`, delega para componentes pequenos.
+- **Gerenciamento de estado, três camadas:** estado de servidor no **TanStack Query** (cache, loading, erro, revalidação e paginação de agentes e execuções); estado global de aplicação em **Context** (`AuthProvider` para o usuário logado, `ToastProvider` para notificações); estado local de UI em `useState` (modal aberto, página atual, campos de formulário). Não usei Redux/Zustand porque o estado verdadeiramente global é mínimo e a maior parte é dado de servidor, para o qual o TanStack Query já é a ferramenta certa.
+- **Consumo com resiliência:** timeout no axios, retry automático do TanStack Query, e um interceptor que desloga em 401. Erros de carregamento viram banner com "tentar de novo"; erros de ação viram toast.
+- **Acessibilidade e responsividade:** HTML semântico, `aria` no medidor e nos diálogos, foco visível, `Esc` fecha modal e drawer, layout mobile-first (topbar colapsa, grade de 1 a 3 colunas).
+- **Regra de negócio visível:** o medidor de consumo (`UsageMeter.tsx`) muda de cor a partir de 80% e fica vermelho no bloqueio; agentes de um cliente no limite ganham selo "Bloqueado". Registrar uma execução em um cliente no limite dispara o 429 e mostra o aviso na tela, tornando a regra tangível.
+
+---
+
+## Notas de debug
+
+Registro aqui bugs reais encontrados durante o desenvolvimento e como foram resolvidos, conforme a Etapa 5.
+
+### 1. Logout sem token retornava 500 em vez de 401
+
+**Sintoma.** Ao chamar `POST /api/auth/logout` sem token e sem o header `Accept: application/json`, a API respondia HTTP 500 com "Route [login] not defined", em vez de um 401 limpo.
+
+**Investigação.** O log apontava `RouteNotFoundException` vindo do `UrlGenerator`. O middleware `Authenticate` do Laravel, quando julga que a requisição não espera JSON, tenta redirecionar o visitante não autenticado para a rota de nome `login`. Numa API pura essa rota não existe, então a geração da URL estourava antes mesmo de o handler decidir o formato da resposta. O `GET /me` não caía nisso porque a chamada de teste enviava `Accept: application/json`; o `logout` sem esse header revelou o buraco.
+
+**Correção.** Desliguei o redirecionamento de visitantes em `backend/bootstrap/app.php` com `$middleware->redirectGuestsTo(fn () => null)`, o que faz o middleware devolver 401 direto. Adicionei um teste (`AuthenticationTest::test_rota_protegida_sem_token_devolve_401_mesmo_sem_pedir_json`) reproduzindo o cenário exato, sem o header, para travar a regressão.
+
+**Lição.** Testar rotas de API também sem o header `Accept`, porque nem todo cliente HTTP o envia, e é justamente aí que o comportamento de fallback aparece.
+
+### 2. Testes da regra central falhando por isolamento entre estratégias de banco
+
+**Sintoma.** Dois testes da regra de bloqueio falhavam de forma intermitente com contagens maiores que o esperado (por exemplo, 4 execuções onde se esperava 3).
+
+**Investigação.** O teste de concorrência precisa de commits reais no banco para que os processos filhos (`pcntl_fork`) enxerguem os dados, então ele usa `DatabaseTruncation`. Os demais testes usam `RefreshDatabase`, que roda dentro de uma transação e faz rollback ao final. Por ordem alfabética, o teste de concorrência rodava antes e deixava uma linha commitada que o rollback dos outros não limpava.
+
+**Correção.** Troquei as asserções que dependiam de contagem global de tabela por asserções escopadas ao agente do próprio teste (`$agent->executions()->count()` em vez de `assertDatabaseCount('executions', ...)`), tornando cada teste independente do estado deixado por outro.
+
+**Lição.** Misturar estratégias de banco na mesma suíte quebra a suposição de isolamento; as asserções precisam ser específicas do que aquele teste criou.
+
+---
+
+*As próximas seções (deploy e respostas de produto) serão adicionadas conforme as etapas avançam.*
