@@ -325,4 +325,42 @@ Os logs estruturados do Laravel já dão a base. Em produção eu os enviaria pa
 
 ---
 
-*A próxima seção (respostas de mentalidade de produto) será adicionada na etapa final.*
+## Etapa 7: Mentalidade de produto
+
+### Essa funcionalidade gera valor real? Para quem?
+
+Gera, e para três públicos em intensidades diferentes.
+
+Para o time de CS é o valor mais forte e imediato, porque é a dor descrita no briefing: sair da planilha e do log bruto para enxergar o consumo de cada cliente em segundos. Menos tempo perdido, menos erro manual.
+
+Para o Comercial o valor é de receita. Ver quais contas estão perto do teto transforma um dado que hoje fica invisível em gatilho de conversa de upgrade.
+
+Para o cliente final o ganho é indireto: o CS resolve o problema dele mais rápido, e o bloqueio evita a surpresa de um consumo que dispara sem aviso.
+
+O valor mais concreto está dentro de casa, no CS e no Comercial. E existe um retorno financeiro direto embutido na regra central: bloquear no limite impede que um cliente consuma além do que paga, o que seria vazamento de receita.
+
+### Existiria uma solução mais simples?
+
+Existiria. O coração do briefing, ser avisado quando um cliente se aproxima do limite e saber quando o bloqueio acontece, cabe numa solução sem painel nenhum.
+
+A versão mais enxuta seria um job agendado que calcula o consumo mensal de cada cliente e dispara um alerta no Slack ou por e-mail quando ele cruza 80% ou 100%. Sem interface, sem autenticação, sem cadastro, um ou dois dias de trabalho. Mais simples ainda seria um dashboard de BI (Metabase, Looker) apontado para os logs de execução que já existem, sem escrever código.
+
+O que o painel entrega além disso, e que justifica construí-lo, é o bloqueio efetivo em vez de apenas o aviso, o cadastro de agentes pelo próprio time, o histórico por agente e uma interface que todo o CS usa sem depender de alguém que saiba SQL. Mas o problema central, isolado, cabe num alerta.
+
+### Vale a pena investir nisso agora?
+
+Depende do momento da Rotik, e eu separaria a resposta em duas partes.
+
+A regra de bloqueio com alerta aos 80% vale agora. É barata e tem retorno direto: protege receita e abre oportunidade de upgrade. Se hoje existem clientes estourando o limite sem nenhuma consequência, esse pedaço se paga sozinho.
+
+O painel completo, com cadastro e histórico self-service, vale a pena quando o trabalho manual do CS virar um gargalo de verdade. Antes disso, é refinamento.
+
+O que eu checaria antes de decidir é se o estouro de limite está mesmo acontecendo e custando dinheiro. Se não estiver, a prioridade cai, e talvez a confiabilidade dos próprios agentes seja mais urgente para a Rotik neste estágio.
+
+### Como medir se está dando certo depois de lançada?
+
+Três métricas concretas:
+
+- **Tempo de diagnóstico do CS:** quanto tempo o time leva para identificar e agir sobre um cliente em risco, comparando o antes (planilha) com o depois. Se cai, a dor foi resolvida.
+- **Conversão de upgrade dos clientes que cruzaram 80%:** mede a receita que o alerta gera para o Comercial.
+- **Adoção pelo CS:** usuários ativos e frequência de uso do painel. Se o time não usa, não resolveu de verdade.
