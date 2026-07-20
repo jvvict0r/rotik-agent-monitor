@@ -6,6 +6,13 @@ import { TextField } from '@/components/ui/TextField'
 import { extractErrorMessage } from '@/lib/api'
 import { useAuth } from './auth-context'
 
+const DEMO_ACCOUNTS = [
+  { label: 'Time interno (CS)', email: 'cs@rotik.com' },
+  { label: 'Cliente saudável', email: 'ana@acme.com' },
+  { label: 'Cliente em alerta', email: 'bruno@betalogistica.com' },
+  { label: 'Cliente bloqueado', email: 'carla@gamafintech.com' },
+]
+
 export function LoginPage() {
   const { login } = useAuth()
   const [email, setEmail] = useState('')
@@ -13,16 +20,26 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
-  async function handleSubmit(event: FormEvent) {
-    event.preventDefault()
+  async function submit(emailValue: string, passwordValue: string) {
     setError(null)
     setSubmitting(true)
     try {
-      await login(email.trim(), password)
+      await login(emailValue.trim(), passwordValue)
     } catch (err) {
       setError(extractErrorMessage(err, 'Não foi possível entrar. Confira suas credenciais.'))
       setSubmitting(false)
     }
+  }
+
+  function handleSubmit(event: FormEvent) {
+    event.preventDefault()
+    void submit(email, password)
+  }
+
+  function loginAs(demoEmail: string) {
+    setEmail(demoEmail)
+    setPassword('password')
+    void submit(demoEmail, 'password')
   }
 
   return (
@@ -88,11 +105,28 @@ export function LoginPage() {
             </Button>
           </form>
 
-          <p className="mt-5 border-t border-hairline pt-4 text-center text-xs text-slate-muted">
-            Acesso de demonstração:{' '}
-            <span className="font-mono text-slate-ink">cs@rotik.com</span> /{' '}
-            <span className="font-mono text-slate-ink">password</span>
-          </p>
+          <div className="mt-5 border-t border-hairline pt-4">
+            <p className="text-center text-xs font-semibold uppercase tracking-wide text-slate-muted">
+              Entrar com uma conta de demonstração
+            </p>
+            <div className="mt-3 grid gap-1.5">
+              {DEMO_ACCOUNTS.map((account) => (
+                <button
+                  key={account.email}
+                  type="button"
+                  onClick={() => loginAs(account.email)}
+                  disabled={submitting}
+                  className="flex items-center justify-between gap-3 rounded-lg border border-hairline px-3 py-2 text-left transition hover:border-brand-300 hover:bg-brand-50 disabled:opacity-60"
+                >
+                  <span className="text-sm font-medium text-slate-ink">{account.label}</span>
+                  <span className="truncate font-mono text-xs text-slate-muted">{account.email}</span>
+                </button>
+              ))}
+            </div>
+            <p className="mt-2.5 text-center text-[11px] text-slate-muted">
+              Todas senhas padrão são: <span className="font-mono font-bold">password</span>
+            </p>
+          </div>
         </div>
       </div>
     </main>
