@@ -4,6 +4,15 @@ Painel de monitoramento de agentes de IA, construído como desafio técnico full
 
 A ideia é dar visibilidade, por cliente, sobre quais agentes estão ativos e quanto cada um executou no mês, além de garantir a regra central do negócio: quando o cliente atinge o limite mensal de execuções do plano, novas execuções são bloqueadas e isso fica visível para o time.
 
+## Demo ao vivo
+
+- Frontend: https://rotik-agent-monitor.vercel.app
+- API: https://rotik-agent-monitor.onrender.com
+
+Entre com `cs@rotik.com` / `password` (perfil do time interno, enxerga todos os clientes). Os demais logins de demonstração estão na seção de execução local, mais abaixo.
+
+> O backend roda no plano gratuito do Render, que hiberna após um tempo sem uso. O primeiro acesso pode levar cerca de 30 segundos para o serviço acordar; os seguintes ficam normais.
+
 ---
 
 ## Etapa 0: Discovery
@@ -284,4 +293,36 @@ Registro aqui bugs reais encontrados durante o desenvolvimento e como foram reso
 
 ---
 
-*As próximas seções (deploy e respostas de produto) serão adicionadas conforme as etapas avançam.*
+## Etapa 6: DevOps
+
+### Integração contínua
+
+O workflow `.github/workflows/ci.yml` roda a cada push e pull request na `main`, com dois jobs: o de backend sobe um Postgres de serviço, instala o PHP com a extensão `pcntl` e executa o lint (Pint) e a suíte de testes; o de frontend roda o lint (oxlint) e o build. Nenhuma mudança entra sem passar por lint e testes.
+
+### Deploy
+
+- **Backend e banco no Render.** A API roda como serviço Docker (`backend/Dockerfile`) e o Postgres é gerenciado pelo Render. No boot, o container aplica as migrations e o seed de demonstração. Toda a configuração vem de variáveis de ambiente (`APP_KEY`, `DB_URL`, `CORS_ALLOWED_ORIGINS`, entre outras), nada hardcoded.
+- **Frontend na Vercel.** Build estático do Vite, com a URL da API injetada pela variável `VITE_API_URL`.
+
+### Logs
+
+O backend registra, no mínimo:
+
+- **Ação de bloqueio por limite.** Cada recusa por cota atingida emite um `Log::warning` com `client_id`, `agent_id`, período e limite (em `ExecutionRecorder`), para o time rastrear quem está batendo no teto do plano.
+- **Erros de servidor.** Exceções não tratadas são logadas pelo Laravel. Em produção a resposta ao cliente é genérica, sem vazar detalhe interno, e o detalhe fica só no log.
+
+### Como eu monitoraria em produção
+
+Não implementado, conforme o enunciado. Descrição do que eu acompanharia e por quê:
+
+- **Taxa de execuções bloqueadas por limite** (a partir dos warnings de bloqueio, por cliente e por período). É o sinal de negócio mais direto: mostra ao Comercial quais contas estão batendo no teto e são candidatas a upgrade, e ao CS quais clientes podem estar com o atendimento interrompido.
+- **Latência e taxa de erro (5xx) da API, por rota.** A rota de registro de execução é a mais crítica, porque roda em transação com trava de linha; latência subindo ali indica contenção no banco, e 5xx indica regressão ou saturação.
+- **Taxa de falha das execuções por agente** (proporção de `failed` sobre o total no mês). Aponta agente problemático para o CS agir, sem varrer o histórico.
+- **Saúde do PostgreSQL:** conexões ativas, uso de CPU e memória, e o crescimento da tabela `executions`, que é a que mais cresce e o gatilho para pensar em particionamento e retenção.
+- **Disponibilidade e tempo de resposta do health check,** com alerta se a API sair do ar.
+
+Os logs estruturados do Laravel já dão a base. Em produção eu os enviaria para um agregador (Grafana Loki, Datadog ou o próprio painel do Render) e montaria alertas sobre a taxa de bloqueios e de erros 5xx.
+
+---
+
+*A próxima seção (respostas de mentalidade de produto) será adicionada na etapa final.*
