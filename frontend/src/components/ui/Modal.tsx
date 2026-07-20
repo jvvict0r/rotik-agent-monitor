@@ -1,6 +1,7 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import { type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { cx } from '@/lib/cx'
+import { useOverlayDismiss } from './useOverlayDismiss'
 
 interface ModalProps {
   open: boolean
@@ -12,25 +13,7 @@ interface ModalProps {
 }
 
 export function Modal({ open, onClose, title, description, children, className }: ModalProps) {
-  const panelRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-
-    const previouslyFocused = document.activeElement as HTMLElement | null
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', onKeyDown)
-    document.body.style.overflow = 'hidden'
-    panelRef.current?.querySelector<HTMLElement>('[data-autofocus]')?.focus()
-
-    return () => {
-      document.removeEventListener('keydown', onKeyDown)
-      document.body.style.overflow = ''
-      previouslyFocused?.focus()
-    }
-  }, [open, onClose])
+  const panelRef = useOverlayDismiss(open, onClose)
 
   if (!open) return null
 

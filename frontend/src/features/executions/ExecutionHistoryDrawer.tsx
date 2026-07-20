@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Drawer } from '@/components/ui/Drawer'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
-import { Banner } from '@/components/ui/Banner'
+import { ErrorState } from '@/components/ui/ErrorState'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { HistoryIcon } from '@/components/icons'
@@ -115,12 +115,10 @@ export function ExecutionHistoryDrawer({
       }
     >
       {executionsQuery.isError ? (
-        <Banner tone="danger" role="alert" className="items-center">
-          <span className="flex-1">{extractErrorMessage(executionsQuery.error, 'Não foi possível carregar o histórico.')}</span>
-          <button type="button" onClick={() => void executionsQuery.refetch()} className="font-semibold underline underline-offset-2">
-            Tentar de novo
-          </button>
-        </Banner>
+        <ErrorState
+          message={extractErrorMessage(executionsQuery.error, 'Não foi possível carregar o histórico.')}
+          onRetry={() => void executionsQuery.refetch()}
+        />
       ) : executionsQuery.isPending ? (
         <HistorySkeleton />
       ) : executions.length === 0 ? (

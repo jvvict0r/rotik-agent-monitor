@@ -12,13 +12,15 @@ export function formatNumber(value: number): string {
   return numberFormatter.format(value)
 }
 
+const EMPTY = ''
+
 export function formatDateTime(value: string | null): string {
-  if (!value) return '—'
+  if (!value) return EMPTY
   return dateTimeFormatter.format(new Date(value))
 }
 
 export function formatDuration(ms: number | null): string {
-  if (ms === null) return '—'
+  if (ms === null) return EMPTY
   if (ms < 1000) return `${ms} ms`
   return `${(ms / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} s`
 }

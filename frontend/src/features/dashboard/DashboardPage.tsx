@@ -4,7 +4,8 @@ import { Banner } from '@/components/ui/Banner'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Skeleton } from '@/components/ui/Skeleton'
-import { AlertIcon, PlusIcon } from '@/components/icons'
+import { ErrorState } from '@/components/ui/ErrorState'
+import { PlusIcon } from '@/components/icons'
 import { extractErrorMessage } from '@/lib/api'
 import { useAuth } from '@/features/auth/auth-context'
 import { useClients } from '@/features/clients/useClients'
@@ -23,18 +24,6 @@ function OverviewSkeleton() {
       <Skeleton className="mt-3 h-4 w-64" />
       <Skeleton className="mt-6 h-3 w-full rounded-full" />
     </Card>
-  )
-}
-
-function ErrorPanel({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <Banner tone="danger" role="alert">
-      <AlertIcon className="mt-0.5 h-4 w-4 shrink-0" />
-      <span className="flex-1">{message}</span>
-      <button type="button" onClick={onRetry} className="font-semibold underline underline-offset-2">
-        Tentar de novo
-      </button>
-    </Banner>
   )
 }
 
@@ -85,7 +74,7 @@ export function DashboardPage() {
   return (
     <AppShell toolbar={toolbar}>
       {isCs && clientsQuery.isError ? (
-        <ErrorPanel
+        <ErrorState
           message={extractErrorMessage(clientsQuery.error, 'Não foi possível carregar os clientes.')}
           onRetry={() => void clientsQuery.refetch()}
         />
@@ -97,7 +86,7 @@ export function DashboardPage() {
       ) : (
         <div className="flex flex-col gap-8">
           {agentsQuery.isError ? (
-            <ErrorPanel
+            <ErrorState
               message={extractErrorMessage(agentsQuery.error, 'Não foi possível carregar os agentes.')}
               onRetry={() => void agentsQuery.refetch()}
             />
